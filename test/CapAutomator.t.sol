@@ -825,6 +825,21 @@ contract CalculateNewCapTests is Test {
         assertEq(newCap, 2_400);
     }
 
+    function test_calculateNewCap_belowState() public {
+        uint256 newCap = capAutomator._calculateNewCapExternal(
+            CapAutomator.CapConfig({
+                max:              4_500,
+                gap:              500,
+                increaseCooldown: 0,
+                lastUpdateBlock:  0,
+                lastIncreaseTime: 0
+            }),
+            4_800,
+            5_200
+        );
+        assertEq(newCap, 4_500);
+    }
+
 }
 
 contract ExecSupplyTests is CapAutomatorUnitTestBase {
@@ -913,6 +928,23 @@ contract ExecSupplyTests is CapAutomatorUnitTestBase {
         assertEq(mockPool.getReserveData(asset).configuration.getSupplyCap(), 7_000);
     }
 
+    function test_execSupply_belowState() public {
+        vm.prank(owner);
+        capAutomator.setSupplyCapConfig({
+            asset:            asset,
+            max:              2_000,
+            gap:              100,
+            increaseCooldown: 0
+        });
+
+        assertEq(mockPool.getReserveData(asset).configuration.getSupplyCap(), 7_000);
+
+        vm.expectCall(address(mockPoolConfigurator), abi.encodeCall(IPoolConfigurator.setSupplyCap, (asset, uint256(2_000))), 1);
+        assertEq(capAutomator.execSupply(asset), 2_000);
+
+        assertEq(mockPool.getReserveData(asset).configuration.getSupplyCap(), 2_000);
+    }
+
 }
 
 contract ExecBorrowTests is CapAutomatorUnitTestBase {
@@ -996,6 +1028,23 @@ contract ExecBorrowTests is CapAutomatorUnitTestBase {
         // totalDebt + gap = 3900 + 100 = 4000
 
         assertEq(mockPool.getReserveData(asset).configuration.getBorrowCap(), 4_000);
+    }
+
+    function test_execBorrow_belowState() public {
+        vm.prank(owner);
+        capAutomator.setBorrowCapConfig({
+            asset:            asset,
+            max:              1_000,
+            gap:              100,
+            increaseCooldown: 0
+        });
+
+        assertEq(mockPool.getReserveData(asset).configuration.getBorrowCap(), 4_000);
+
+        vm.expectCall(address(mockPoolConfigurator), abi.encodeCall(IPoolConfigurator.setBorrowCap, (asset, uint256(1_000))), 1);
+        assertEq(capAutomator.execBorrow(asset), 1_000);
+
+        assertEq(mockPool.getReserveData(asset).configuration.getBorrowCap(), 1_000);
     }
 
 }

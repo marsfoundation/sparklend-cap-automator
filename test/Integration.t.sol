@@ -149,6 +149,25 @@ contract GeneralizedTests is CapAutomatorIntegrationTestsBase {
 
             uint256 postDecreaseBorrowCap = pool.getReserveData(assets[i]).configuration.getBorrowCap();
             assertEq(postDecreaseBorrowCap, currentBorrow + newGap);
+
+            if (currentBorrow >= 3) {  // "> 0", but also so "/ 3" makes sense
+                vm.roll(block.number + 1);
+
+                uint256 borrowCapBelowState = currentBorrow / 3;
+
+                vm.prank(SPARK_PROXY);
+                capAutomator.setBorrowCapConfig({
+                    asset:            assets[i],
+                    max:              borrowCapBelowState,
+                    gap:              0,
+                    increaseCooldown: 12 hours
+                });
+
+                capAutomator.exec(assets[i]);
+
+                postDecreaseBorrowCap = pool.getReserveData(assets[i]).configuration.getBorrowCap();
+                assertEq(postDecreaseBorrowCap, borrowCapBelowState);
+            }
         }
     }
 
@@ -234,6 +253,25 @@ contract GeneralizedTests is CapAutomatorIntegrationTestsBase {
 
             uint256 postDecreaseSupplyCap = pool.getReserveData(assets[i]).configuration.getSupplyCap();
             assertEq(postDecreaseSupplyCap, currentSupply + newGap);
+
+            if (currentSupply >= 3) {  // "> 0", but also so "/ 3" makes sense
+                vm.roll(block.number + 1);
+
+                uint256 supplyCapBelowState = currentSupply / 3;
+
+                vm.prank(SPARK_PROXY);
+                capAutomator.setSupplyCapConfig({
+                    asset:            assets[i],
+                    max:              supplyCapBelowState,
+                    gap:              0,
+                    increaseCooldown: 12 hours
+                });
+
+                capAutomator.exec(assets[i]);
+
+                postDecreaseSupplyCap = pool.getReserveData(assets[i]).configuration.getSupplyCap();
+                assertEq(postDecreaseSupplyCap, supplyCapBelowState);
+            }
         }
     }
 
@@ -319,6 +357,27 @@ contract ConcreteTests is CapAutomatorIntegrationTestsBase {
         capAutomator.execSupply(WBTC);
         // previousSupply - justWithdrawn + gap = 2_875 - 125 + 500 = 3_250
         assertEq(pool.getReserveData(WBTC).configuration.getSupplyCap(), 3_250);
+
+        // Check that the supply cap can be decreased below current supply
+        vm.prank(SPARK_PROXY);
+        capAutomator.setSupplyCapConfig({
+            asset:            WBTC,
+            max:              1_000,
+            gap:              100,
+            increaseCooldown: 12 hours
+        });
+
+        vm.roll(block.number + 1);
+        capAutomator.execSupply(WBTC);
+
+        assertEq(currentATokenSupply(pool.getReserveData(WBTC)), 2_750);
+        // initialSupply + suppliedInTest - withdrawnInTest = 750 + 2_000 + 250 - 125 - 125 = 750 + 2_250 - 250 = 2_750
+        assertEq(pool.getReserveData(WBTC).configuration.getSupplyCap(), 1_000);
+
+        vm.startPrank(user);
+        vm.expectRevert(bytes("51"));  // SUPPLY_CAP_EXCEEDED
+        pool.supply(WBTC, 1, user, 0);
+        vm.stopPrank();
     }
 
     function test_E2E_borrow_weth() public {
@@ -394,6 +453,28 @@ contract ConcreteTests is CapAutomatorIntegrationTestsBase {
         // totalDebt + gap = initialBorrows + previouslyBorrowed - previouslyRepaid + justBorrowed + debtAccruedIn24h + gap
         // = 126_520 + 480 - 50 + 150 + 10 + 100_000 = 227_000
         assertEq(pool.getReserveData(WETH).configuration.getBorrowCap(), 227_110);
+
+        // Check that the borrow cap can be decreased below current borrows
+        vm.prank(SPARK_PROXY);
+        capAutomator.setBorrowCapConfig({
+            asset:            WETH,
+            max:              100_000,
+            gap:              100,
+            increaseCooldown: 12 hours
+        });
+
+        vm.roll(block.number + 1);
+        capAutomator.execBorrow(WETH);
+
+        assertEq(currentBorrows(pool.getReserveData(WETH)), 127_110);
+        // initialBorrows + borrowedInTest - repaidInTest + debtAccruedIn24h
+        // = 126_520 + 480 + 150 - 50 + 10 = 227_000
+        assertEq(pool.getReserveData(WETH).configuration.getBorrowCap(), 100_000);
+
+        vm.startPrank(user);
+        vm.expectRevert(bytes("50"));  // BORROW_CAP_EXCEEDED
+        pool.borrow(WETH, 1, 2 /* variable rate mode */, 0, user);
+        vm.stopPrank();
     }
 
 }
